@@ -21,10 +21,14 @@ http {
         server ${EVENTS_SERVICE_HOST};
     }
 
-    # Split клиент для постепенной миграции
-    split_clients "${remote_addr}${http_user_agent}" $movies_migration {
-        ${MOVIES_MIGRATION_PERCENT}% movies_service_backend;
-        * monolith_backend;
+    # Split клиент для постепенной миграции - распределяет запросы между movies и monolith
+    # Используем комбинацию переменных для более равномерного распределения
+    # Добавляем http_user_agent, request_method и query_string для увеличения разнообразия хешей
+    # ${MOVIES_MIGRATION_PERCENT}% запросов идут на movies-service, остальные на monolith
+    # Если GRADUAL_MIGRATION=false, то MOVIES_MIGRATION_PERCENT должен быть установлен в 100
+    split_clients "${remote_addr}${http_user_agent}${request_uri}${request_method}${args}${time_iso8601}" $movies_migration {
+        ${MOVIES_MIGRATION_PERCENT}% ${MOVIES_SERVICE_URL};
+        * ${MONOLITH_URL};
     }
 
     server {
@@ -48,13 +52,14 @@ http {
                 break;
             }
             
-            # Устанавливаем целевой URL в зависимости от режима миграции
-            set $movies_target_url ${MOVIES_SERVICE_URL};
-            if ($use_gradual_migration) {
-                set $movies_target_url "http://$movies_migration";
-            }
+            # Используем результат split_clients напрямую
+            # Если GRADUAL_MIGRATION=true и MOVIES_MIGRATION_PERCENT=50, то 50% на movies, 50% на monolith
+            # Если GRADUAL_MIGRATION=false, то MOVIES_MIGRATION_PERCENT должен быть 100 (все на movies)
             
-            proxy_pass $movies_target_url;
+            # Добавляем заголовок для отладки - показывает, куда идет запрос
+            add_header X-Migration-Target $movies_migration;
+            
+            proxy_pass $movies_migration;
             
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
