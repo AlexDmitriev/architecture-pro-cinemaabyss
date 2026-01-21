@@ -1,0 +1,107 @@
+events {
+    worker_connections 1024;
+}
+
+http {
+    # Map для преобразования переменной окружения GRADUAL_MIGRATION в переменную nginx
+    map "${GRADUAL_MIGRATION}" $use_gradual_migration {
+        "true" 1;
+        default 0;
+    }
+
+    upstream monolith_backend {
+        server ${MONOLITH_HOST};
+    }
+
+    upstream movies_service_backend {
+        server ${MOVIES_SERVICE_HOST};
+    }
+
+    upstream events_service_backend {
+        server ${EVENTS_SERVICE_HOST};
+    }
+
+    # Split клиент для постепенной миграции
+    split_clients "${remote_addr}${http_user_agent}" $movies_migration {
+        ${MOVIES_MIGRATION_PERCENT}% movies_service_backend;
+        * monolith_backend;
+    }
+
+    server {
+        listen ${PORT};
+        server_name localhost;
+
+        # Логирование
+        access_log /var/log/nginx/access.log;
+        error_log /var/log/nginx/error.log;
+
+        # Статические файлы (если нужны)
+        location /static/ {
+            alias /usr/share/nginx/html/static/;
+        }
+
+        # Проксирование на movies-service или monolith в зависимости от миграции
+        location ~ ^/api/movies(/|$) {
+            if ($arg_debug_migration) {
+                add_header X-Migration-Target "movies_service_backend";
+                proxy_pass ${MOVIES_SERVICE_URL};
+                break;
+            }
+            
+            # Устанавливаем целевой URL в зависимости от режима миграции
+            set $movies_target_url ${MOVIES_SERVICE_URL};
+            if ($use_gradual_migration) {
+                set $movies_target_url "http://$movies_migration";
+            }
+            
+            proxy_pass $movies_target_url;
+            
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            
+            # Таймауты
+            proxy_connect_timeout 30s;
+            proxy_send_timeout 30s;
+            proxy_read_timeout 30s;
+        }
+
+        # Проксирование на events-service
+        location ~ ^/api/events(/|$) {
+            proxy_pass ${EVENTS_SERVICE_URL};
+            
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            
+            # Таймауты
+            proxy_connect_timeout 30s;
+            proxy_send_timeout 30s;
+            proxy_read_timeout 30s;
+        }
+
+        # Все остальные запросы идут на монолит
+        location / {
+            proxy_pass ${MONOLITH_URL};
+            
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            
+            # Таймауты
+            proxy_connect_timeout 30s;
+            proxy_send_timeout 30s;
+            proxy_read_timeout 30s;
+        }
+
+        # Health check endpoint
+        location /health {
+            access_log off;
+            return 200 "healthy\n";
+            add_header Content-Type text/plain;
+        }
+    }
+}
