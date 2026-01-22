@@ -41,7 +41,7 @@ Rel_D(apiGateway, c1, "→ /api/*", "HTTP")
 
 Rel_D(c1, kafka, "Микросервисы: публикация/подписка", "Pub/Sub")
 
-Rel_R(users, recomendation, "Получение рекомендаций")
+Rel_L(users, recomendation, "Получение рекомендаций")
 Rel_D(users, databaseUsers, "SQL")
 
 Rel_L(payments, paymentSystem, "Обработка платежей")
