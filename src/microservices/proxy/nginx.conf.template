@@ -26,10 +26,8 @@ http {
     # Добавляем http_user_agent, request_method и query_string для увеличения разнообразия хешей
     # ${MOVIES_MIGRATION_PERCENT}% запросов идут на movies-service, остальные на monolith
     # Если GRADUAL_MIGRATION=false, то MOVIES_MIGRATION_PERCENT должен быть установлен в 100
-    split_clients "${remote_addr}${http_user_agent}${request_uri}${request_method}${args}${time_iso8601}" $movies_migration {
-        ${MOVIES_MIGRATION_PERCENT}% ${MOVIES_SERVICE_URL};
-        * ${MONOLITH_URL};
-    }
+    # Если MOVIES_MIGRATION_PERCENT=0, то split_clients не используется (всегда монолит)
+    ${SPLIT_CLIENTS_CONFIG}
 
     server {
         listen ${PORT};
@@ -52,9 +50,15 @@ http {
                 break;
             }
             
+            # Инициализируем переменную $movies_migration
+            # Если MOVIES_MIGRATION_PERCENT=0, то $movies_migration будет установлена в монолит
+            # Иначе используется результат split_clients
+            ${MOVIES_MIGRATION_INIT}
+            
             # Используем результат split_clients напрямую
             # Если GRADUAL_MIGRATION=true и MOVIES_MIGRATION_PERCENT=50, то 50% на movies, 50% на monolith
             # Если GRADUAL_MIGRATION=false, то MOVIES_MIGRATION_PERCENT должен быть 100 (все на movies)
+            # Если MOVIES_MIGRATION_PERCENT=0, то всегда монолит (split_clients не используется)
             
             # Добавляем заголовок для отладки - показывает, куда идет запрос
             add_header X-Migration-Target $movies_migration;
