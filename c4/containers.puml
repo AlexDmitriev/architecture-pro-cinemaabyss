@@ -1,0 +1,53 @@
+@startuml
+!theme cerulean
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+Person(user_notebook, "Ноутбук", "Пользователь")
+Person(user_mobile, "Мобильное приложение", "Пользователь")
+Person(user_smart_tv, "Smart TV", "Пользователь")
+
+System_Ext(recomendation, "Внешняя рекомендательная система")
+System_Ext(paymentSystem, "Внешний шлюз обработки платежей")
+
+System_Boundary(c0, "Кинобездна") {
+    Container(webapp, "Web Application", "JavaScript, Vue.js", "Интерфейс пользователя")
+    Container(apiGateway, "API Gateway", "nginx", "Маршрутизация запросов к микросервисам")
+    ContainerQueue(kafka, "Kafka", "Обмен событиями")
+
+    System_Boundary(c1, "Микросервисы") {
+          Container(users, "Управление пользователями", "Go, Python")
+          ContainerDb(databaseUsers, "Хранение данных о пользователях",  "PostgreSQL")
+
+          Container(movies, "Мета-данные о фильмах", "Go, Python")
+          ContainerDb(databaseMovies, "Хранение данных о фильмах",  "PostgreSQL")
+
+          Container(payments, "Подписки и платежи", "Go, Python")
+          ContainerDb(databasePayments, "Хранение данных о платежах",  "PostgreSQL")
+
+          Container(tracking, "Трекинг просмотра фильмов", "Go, Python")
+          ContainerDb(databaseTracking, "Хранение данных трекинга",  "PostgreSQL")
+
+          Container(ratings, "Рейтинг просмотра фильмов", "Go, Python")
+          ContainerDb(databaseRatings, "Хранение рейтингов",  "PostgreSQL")
+    }
+}
+
+Rel_D(user_notebook, webapp, "Использует UI", "HTTPS")
+Rel_D(user_mobile, apiGateway, "Использует REST API", "HTTPS")
+Rel_D(user_smart_tv, apiGateway, "Использует REST API", "HTTPS")
+Rel_R(webapp, apiGateway, "Вызывает REST API", "HTTPS")
+
+Rel_D(apiGateway, c1, "→ /api/*", "HTTP")
+
+Rel_D(c1, kafka, "Микросервисы: публикация/подписка", "Pub/Sub")
+
+Rel_L(users, recomendation, "Получение рекомендаций")
+Rel_D(users, databaseUsers, "SQL")
+
+Rel_L(payments, paymentSystem, "Обработка платежей")
+Rel_D(payments, databasePayments, "SQL")
+
+Rel_D(movies, databaseMovies, "SQL")
+Rel_D(tracking, databaseTracking, "SQL")
+Rel_D(ratings, databaseRatings, "SQL")
+@enduml
